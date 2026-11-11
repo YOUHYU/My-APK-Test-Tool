@@ -1,0 +1,18 @@
+- insert:
+    - id: apkplat-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: apkplat
+        transport: stdio
+        command: 'D:\ADeespseekSH\REA\apk-research-platform\.venv\Scripts\python.exe'
+        args:
+          - 'D:\ADeespseekSH\REA\apk-research-platform\mcp-server\mcp_server\server.py'
+        cwd: 'D:\ADeespseekSH\REA\apk-research-platform'
+        env:
+          APKPLAT_STORAGE: 'D:\ADeespseekSH\REA\apk-research-platform\storage'
+          APKPLAT_MCP_PROJECTS: '*'
+          APKPLAT_MCP_ACTOR: 'dsh-agent'
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+        toolCallTimeoutMs: 120000
+        failOnStartupError: true

@@ -1,0 +1,13 @@
+{
+  "name": "apkplat-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "DSH-side half of the APK platform P1 bridge: registers the run's scoped tools and forwards them to the platform gateway.",
+  "dsh": {
+    "bundle": {
+      "cordis.patch.yml": "cordis.patch.yml"
+    }
+  }
+}

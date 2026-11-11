@@ -1,0 +1,77 @@
+{
+  "node": {
+    "id": "node",
+    "version": "22.23.4",
+    "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
+    "dest": "node",
+    "installed_at": "2026-11-10T18:17:04+0800",
+    "state": "ok",
+    "sha256": null,
+    "probe": [
+      "node.exe",
+      "-v"
+    ],
+    "probe_ok": true,
+    "probe_detail": "v22.23.4"
+  },
+  "jdk": {
+    "id": "jdk",
+    "version": "21-ga-temurin",
+    "url": "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse?project=jdk",
+    "dest": "jdk",
+    "installed_at": "2026-11-10T18:17:23+0800",
+    "state": "ok",
+    "sha256": null,
+    "probe": [
+      "bin/java.exe",
+      "-version"
+    ],
+    "probe_ok": true,
+    "probe_detail": "openjdk version \"21.0.13\" 2026-10-20 LTS"
+  },
+  "jadx": {
+    "id": "jadx",
+    "version": "1.5.6",
+    "url": "https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-1.5.6.zip",
+    "dest": "jadx",
+    "installed_at": "2026-11-10T18:17:30+0800",
+    "state": "ok",
+    "sha256": null,
+    "probe": [
+      "bin/jadx.bat",
+      "--version"
+    ],
+    "probe_ok": true,
+    "probe_detail": "1.5.6"
+  },
+  "apktool": {
+    "id": "apktool",
+    "version": "3.0.3",
+    "url": "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar",
+    "dest": "apktool",
+    "installed_at": "2026-11-10T18:17:33+0800",
+    "state": "ok",
+    "sha256": "dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423",
+    "probe": [
+      "apktool.bat",
+      "--version"
+    ],
+    "probe_ok": true,
+    "probe_detail": "Apktool 3.0.3 - a tool for reengineering Android apk files"
+  },
+  "android": {
+    "id": "android",
+    "version": "cmdline-tools-13114758",
+    "url": "https://dl.google.com/android/repository/commandlinetools-win-13114758_latest.zip",
+    "dest": "android-sdk/cmdline-tools",
+    "installed_at": "2026-11-10T18:18:39+0800",
+    "state": "ok",
+    "sha256": null,
+    "probe": [
+      "build-tools/34.0.0/aapt2.exe",
+      "version"
+    ],
+    "probe_ok": false,
+    "probe_detail": "missing D:\\ADeespseekSH\\REA\\apk-research-platform\\tools\\android-sdk\\cmdline-tools\\build-tools\\34.0.0\\aapt2.exe"
+  }
+}

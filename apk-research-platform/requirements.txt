@@ -1,0 +1,21 @@
+# Top-level requirements for the APK research platform.
+# Install into the project virtual environment:
+#   C:\Users\YHY\AppData\Local\Programs\Python\Python313\python.exe -m venv .venv
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# requirements.lock holds the full, exact transitive set resolved on this host.
+
+fastapi==0.162.2
+uvicorn==0.54.0
+pydantic==2.14.3
+python-multipart==0.0.33
+python-dotenv==1.2.4
+PyYAML==6.0.3
+
+# APK parsing, signing-block facts and DEX string inventory
+androguard==4.1.4
+
+# HTTP self-check against the operator-provided model API
+httpx==0.28.1
+
+# Test suite
+pytest==9.2.0

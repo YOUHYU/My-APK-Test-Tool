@@ -1,0 +1,58 @@
+# Restricted worker policy.
+#
+# Read by backend/apkplat/toolchain.py on every child-process launch. This file is
+# the auditable statement of "what a worker is allowed to execute"; the code path
+# that enforces it is toolchain.run(), which refuses any executable whose basename
+# is not listed below.
+#
+# Nothing here loosens a timeout or a sandbox rule that the taskbook fixes: it only
+# narrows the set of programs the workers may start.
+
+version: 1
+
+# Executables (basename, case-insensitive) that may be launched by a worker.
+# They resolve from tools/ via toolchain.paths(); the platform never uses a PATH
+# lookup for these.
+allowed_executables:
+  - java.exe      # jadx and apktool run in-process through the JDK
+  - aapt2.exe     # resource dump / resource compilation
+  - adb.exe       # dynamic device transport
+  - node.exe      # reserved for the frontend build, unused by workers today
+
+# Hard ceiling on a single tool invocation, in seconds. Settings
+# (APKPLAT_JADX_TIMEOUT / APKPLAT_APKTOOL_TIMEOUT) still apply per call site; this
+# is the belt-and-braces maximum a worker may ask for.
+max_timeout_seconds: 900
+
+# Per-stream output cap before the tail is replaced with a truncation marker.
+max_output_bytes: 16777216
+
+# Environment variables that survive into a child process. Everything else is
+# dropped, which is how DSH credentials and model API keys stay out of jadx.
+environ_allow:
+  - SystemRoot
+  - SystemDrive
+  - windir
+  - TEMP
+  - TMP
+  - PATHEXT
+  - COMSPEC
+  - NUMBER_OF_PROCESSORS
+  - PROCESSOR_ARCHITECTURE
+  - LOCALAPPDATA
+  - USERPROFILE
+  - HOMEDRIVE
+  - HOMEPATH
+
+# Substrings that disqualify an extra environment variable even when a caller
+# explicitly passes it (env_extra).
+environ_drop_patterns:
+  - DSH_
+  - KEY
+  - SECRET
+  - TOKEN
+  - PASSWORD
+
+# Working directories are always resolved under this root; a caller asking for any
+# other cwd is refused with cwd_outside_storage.
+cwd_root: storage

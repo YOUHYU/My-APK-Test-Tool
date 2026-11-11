@@ -1,0 +1,70 @@
+# ==============================================================
+# APK Research Platform — 版本管理忽略规则（仓库根：D:\ADeespseekSH\REA）
+# 原则：只收源码、文档、测试与验收证据；依赖、工具链、运行时数据、
+#       数据库、缓存、密钥与本地配置一律不入库。
+# ==============================================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# ---------- Node ----------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---------- 密钥与本地配置（绝不入库）----------
+.env
+.env.local
+.env.*.local
+!.env.example
+secret.key
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.yaml
+.credentials.yaml
+
+# ---------- 运行时数据 / 数据库 / 备份 / 缓存 ----------
+apk-research-platform/runtime/
+apk-research-platform/storage/
+apk-research-platform/backups/
+apk-research-platform/.tmp/
+apk-research-platform/tests/.tmp*/
+apk-research-platform/tests/.p3probe/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ---------- 便携工具链与下载缓存（约 1.3 GB，按 MANIFEST 重建）----------
+.tools/
+apk-research-platform/tools/*
+!apk-research-platform/tools/MANIFEST.json
+
+# ---------- 本地分析物料（第三方安装包与编译产物，不入库）----------
+# 体积大的安装包请在本地单独忽略（.git/info/exclude），不要提交
+local-apk/
+*.apk
+*.idsig
+
+# ---------- 系统杂项 ----------
+Thumbs.db
+desktop.ini
+.DS_Store

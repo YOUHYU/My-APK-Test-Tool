@@ -1,0 +1,55 @@
+# P0 overlay: boot the shipped `headless` profile with (a) the model line the operator
+# already uses in the desktop app and (b) the apkplat MCP server registered for real.
+#
+# Applied ONLY via `dsh --profile headless --patch <this file> ...` for the P0 probe.
+# It is never copied into ~/.dsh/profiles/desktop/cordis.patch.yml, so the running
+# desktop app (and its model configuration) is untouched. Delete this file to roll back.
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      wb-proxy:
+        displayName: WB Proxy (P0 probe, same endpoint as the desktop app)
+        apiKeyEnv: WB_PROXY_API_KEY
+        api: openai-completions
+        baseURL: http://192.168.43.1:8788/v1
+        compat:
+          thinkingFormat: openai
+          supportsReasoningEffort: true
+        models:
+          - id: deepseek-v4.1-flash
+            contextWindow: 1000000
+            maxTokens: 128000
+            reasoningEfforts:
+              max: max
+            input:
+              - text
+
+- id: agent-default-model
+  config:
+    provider: wb-proxy
+    model: deepseek-v4.1-flash
+
+# Minimal read-only surface for P0: three tools, no writes, project allowlist pinned
+# to the single demo project so a stray id cannot reach the other projects.
+# `insert:` (without `id`) appends top-level entries; a plain `- id: x` is an id-targeted
+# override and fails with "patch: entry not found" for a genuinely new plugin.
+- insert:
+    - id: mcp-apkplat
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: apkplat
+        transport: stdio
+        command: 'D:\ADeespseekSH\REA\apk-research-platform\.venv\Scripts\python.exe'
+        args:
+          - 'D:\ADeespseekSH\REA\apk-research-platform\mcp-server\mcp_server\server.py'
+        cwd: 'D:\ADeespseekSH\REA\apk-research-platform'
+        env:
+          APKPLAT_STORAGE: 'D:\ADeespseekSH\REA\apk-research-platform\storage'
+          APKPLAT_MCP_PROJECTS: 'prj_6cd77a33712947b4b876c67f6c04a36f'
+          APKPLAT_MCP_ALLOW_TOOLS: 'project_get,artifact_list,evidence_read'
+          APKPLAT_MCP_ACTOR: 'dsh-headless'
+          PYTHONUTF8: '1'
+          PYTHONPATH: 'D:\ADeespseekSH\REA\apk-research-platform\backend'
+        toolCallTimeoutMs: 120000
+        failOnStartupError: true
