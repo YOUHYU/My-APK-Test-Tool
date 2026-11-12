@@ -1,4 +1,4 @@
-﻿"""P3 sandbox: what it does, and - more importantly - what it refuses to pretend.
+"""P3 sandbox: what it does, and - more importantly - what it refuses to pretend.
 
 The executor on this host is *cooperative*: a static screen, a scrubbed environment, a
 wall-clock timeout and capped output. There is no container, so a request for container

@@ -29,6 +29,7 @@ from ..services import devices as devices_service
 from ..services import evidence as evidence_service
 from ..services import projects as projects_service
 from ..services import queue as queue_service
+from ..services import recovery as recovery_service
 from ..services import tasks as tasks_service
 from ..state import TransitionError, column_of
 from ..util import dumps, new_id
@@ -163,6 +164,7 @@ def create_app() -> FastAPI:
         goal: str | None = Form(None),
         ground_truth: str | None = Form(None),
         policy_id: str = Form("default"),
+        storage_root: str | None = Form(None),
         claims: dict = Depends(require("write")),
     ) -> dict[str, Any]:
         truth = None
@@ -200,11 +202,15 @@ def create_app() -> FastAPI:
                 goal=goal,
                 ground_truth=truth,
                 policy_id=policy_id,
+                storage_root=storage_root,
                 actor="api",
             )
         except ApkError as exc:
             tmp.unlink(missing_ok=True)
             return JSONResponse(status_code=422, content={"error_code": exc.code, "message": exc.message})
+        except projects_service.ProjectError as exc:
+            tmp.unlink(missing_ok=True)
+            return JSONResponse(status_code=exc.status, content=exc.as_error())
         job_id = queue_service.enqueue(
             "static_pipeline",
             project_id=project["id"],
@@ -231,6 +237,21 @@ def create_app() -> FastAPI:
         board = projects_service.board(project_id)
         board["approvals"] = tasks_service.pending_approvals(project_id)
         return board
+
+    # -- recovery ----------------------------------------------------------
+    @app.get("/api/projects/{project_id}/recovery")
+    def get_recovery(project_id: str, _: dict = Depends(require("read"))) -> dict[str, Any]:
+        _ensure_project(project_id)
+        return recovery_service.recovery_report(project_id)
+
+    @app.post("/api/projects/{project_id}/resume", status_code=202)
+    def resume_project(project_id: str, claims: dict = Depends(require("write"))) -> dict[str, Any]:
+        """Reclaim expired leases and re-publish jobs for unfinished cards."""
+        _ensure_project(project_id)
+        summary = recovery_service.resume_project(project_id, actor=str(claims.get("sub") or "api"))
+        if not summary.get("ok"):
+            raise HTTPException(status_code=404, detail={"error_code": summary.get("error_code", "project_not_found")})
+        return summary
 
     # -- tasks -------------------------------------------------------------
     @app.get("/api/projects/{project_id}/tasks")
@@ -641,11 +662,13 @@ def create_app() -> FastAPI:
     from . import p4_api
     from . import p5_api
     from . import p6_api
+    from . import control_api
 
     app.include_router(p3_api.router)
     app.include_router(p4_api.router)
     app.include_router(p5_api.router)
     app.include_router(p6_api.router)
+    app.include_router(control_api.router)
 
     # -- static UI ---------------------------------------------------------
     if FRONTEND.exists():

@@ -1,4 +1,4 @@
-﻿"""Run capabilities are the only thing standing between an agent and the platform.
+"""Run capabilities are the only thing standing between an agent and the platform.
 
 These tests pin the rules the taskbook makes non-negotiable: the token is opaque and
 hashed at rest, the scope is the sole authority on which tools a role may call, and

@@ -375,6 +375,7 @@ def run_task(
     observe_seconds: int | None = None,
     cleanup_mode: str = "PRESERVE_APP",
     health_gate: bool = True,
+    check: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     say = _log_sink(log)
     project = projects_service.get(project_id)
@@ -458,6 +459,10 @@ def run_task(
     cleanup: dict[str, Any] = {"attempted": False, "verified": False, "reason": None}
 
     def step(name: str, fn: Callable[[], dict]) -> dict:
+        # Cooperative cancellation: only between steps, never mid-command - a half-finished
+        # install would leave the device in a state the cleanup step does not model.
+        if check is not None:
+            check()
         devices_service.heartbeat(lease["id"], owner=worker_id)
         began = time.time()
         detail = fn()

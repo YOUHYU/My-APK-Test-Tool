@@ -1,4 +1,4 @@
-﻿"""The bridge gateway is the only door an agent has into the platform.
+"""The bridge gateway is the only door an agent has into the platform.
 
 Each test here talks HTTP the way the DSH plugin does: read the run token from the
 file the platform wrote, then call typed tools. What matters is not that the tools

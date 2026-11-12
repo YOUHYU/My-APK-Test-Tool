@@ -210,6 +210,14 @@ $py scripts\apkplat_cli.py job-reset <job_id> --reason "operator retry"
 The `/api/metrics` `task_recovery_success` ratio counts `job_recovered_after_restart` over
 `job_lease_reclaimed`.
 
+**Since P8-lite** (`services/recovery.py`) there is a one-shot path that needs no reasoning about
+lease maths: `apkplat_cli.py resume <project_id>` or `POST /api/projects/{id}/resume` reclaims
+expired leases and re-publishes `static_pipeline` for every unfinished card without a live job
+(audited `project_resumed`). A long-lived worker also reaps by itself every
+`max(15, min(60, lease/4))` seconds, so the "restart the worker" step is no longer required.
+`GET /api/projects/{id}/recovery` reports `dead_leases>0` when a `RUNNING` row's lease has
+expired — that is the state the console's 「恢复未完成的工作」 bar reacts to.
+
 ## 9b. The card never left RUNNING although the job SUCCEEDED
 
 **Symptom.** `apkplat_cli.py queue` shows the job SUCCEEDED, the project is ANALYZED, evidence

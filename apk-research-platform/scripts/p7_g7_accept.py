@@ -243,7 +243,8 @@ def main() -> int:
         progressed += 1
     check("stability_loop_advanced_cards", progressed == 4, f"cards={progressed}")
 
-    check("migrations_are_ordered", migrations[-1].startswith("008"), f"last={migrations[-1]}")
+    expected_last = sorted(p.name for p in (settings.root / "migrations").glob("*.sql"))[-1]
+    check("migrations_are_ordered", migrations[-1] == expected_last, f"last={migrations[-1]}")
     write_report(migrations, demo_id, real_id, column_counts)
     failures = [row for row in CHECKS if not row["ok"]]
     print(f"\n[g7] {len(CHECKS) - len(failures)}/{len(CHECKS)} checks passed")

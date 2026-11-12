@@ -1,4 +1,4 @@
-﻿"""Static analysis pipeline: one APK in, an indexed project with evidence out.
+"""Static analysis pipeline: one APK in, an indexed project with evidence out.
 
 Stages (each writes an artifact and an audit event, so a failure points at one
 stage instead of at the pipeline):
@@ -63,14 +63,20 @@ def run(
     log: Callable[[str], None] | None = None,
     task_id: str | None = None,
     force: bool = False,
+    check: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Run the static pipeline, reusing a cached analysis when the APK digest matches.
 
     ``force=True`` skips the cache read (the entry is refreshed afterwards), which is what a
     reviewer uses when the cached trees are suspected of coming from another build.
+
+    ``check`` is the cooperative cancellation hook: the worker passes a callable that raises
+    when the operator stopped the project, and each stage boundary calls it. A stage in flight
+    (jadx, apktool) is never interrupted - only the boundary between stages is.
     """
     started = time.time()
     say = log or (lambda msg: None)
+    checkpoint = check or (lambda: None)
     silence_library_logging()
     project = projects_service.get(project_id)
     if not project:
@@ -90,6 +96,7 @@ def run(
     artifacts_service.register(project_id, kind="validation", path=validation_path, task_id=task_id, tool="apkplat.validate")
     say(f"validated: {validation.entries} entries, {validation.uncompressed_bytes} bytes uncompressed")
 
+    checkpoint()
     apk_sha = cache.digest(apk)
     restored = None
     if settings.cache_enabled and not force:
@@ -98,7 +105,7 @@ def run(
         say(f"cache hit {apk_sha[:12]}: restored {len(restored['registered'])} artifacts, tools not re-run")
         state = _state_from_cache(project_id, layout, apk_sha)
     else:
-        state = _analyse(project_id, apk, layout, extracted, task_id, say)
+        state = _analyse(project_id, apk, layout, extracted, task_id, say, checkpoint)
         if settings.cache_enabled:
             stored = cache.put(project_id, apk_sha, metadata=state["metadata"])
             if stored is None:
@@ -143,8 +150,11 @@ def _analyse(
     extracted: Path,
     task_id: str | None,
     say: Callable[[str], None],
+    checkpoint: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Stages 2-6: decode, decompile, read metadata, scan literals, build the index."""
+    tick = checkpoint or (lambda: None)
+    tick()
     # -- 2. apktool (resources) ------------------------------------------
     apktool_dir = layout["artifacts"] / "apktool"
     log_dir = layout["logs"]
@@ -164,6 +174,7 @@ def _analyse(
         )
     say(f"apktool decode: exit {apktool_result.exit_code} in {apktool_result.duration_ms} ms")
 
+    tick()
     # -- 3. jadx (code) ---------------------------------------------------
     jadx_dir = layout["artifacts"] / "jadx"
     jadx_result = toolchain.jadx_decompile(apk, jadx_dir, log_dir)
@@ -184,6 +195,7 @@ def _analyse(
     java_count = sum(1 for _ in java_sources.rglob("*.java")) if java_sources.exists() else 0
     say(f"jadx: {java_count} java files, exit {jadx_result.exit_code}, {jadx_result.duration_ms} ms")
 
+    tick()
     # -- 4. metadata ------------------------------------------------------
     try:
         metadata = apkfile.parse_metadata(apk)
@@ -215,6 +227,7 @@ def _analyse(
         project_id, kind="metadata", path=manifest_path, task_id=task_id, tool="androguard", tool_version="4.1.4"
     )
 
+    tick()
     # -- 5. inventory (urls + secret-shaped literals) ----------------------
     dex_strings = _dex_strings(apk)
     findings = _scan_sources(java_sources, dex_strings)
@@ -222,6 +235,7 @@ def _analyse(
     apkfile.write_json(findings_path, findings)
     artifacts_service.register(project_id, kind="findings", path=findings_path, task_id=task_id, tool="apkplat.scan")
 
+    tick()
     # -- 6. index ---------------------------------------------------------
     counts = indexer.build(
         project_id,

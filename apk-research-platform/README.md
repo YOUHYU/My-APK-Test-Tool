@@ -50,6 +50,16 @@ search, report, task drawer, settings), or drive it headless:
 .\.venv\Scripts\python.exe scripts\apkplat_cli.py report <project_id>
 ```
 
+Two operations worth knowing before the first long run:
+
+* **Case directory** — `create --storage-root D:\cases\case-42` (or the `storage_root` upload
+  field) pins a project's files outside the platform storage. Refusals are explicit
+  (`storage_root_inside_storage`, `storage_root_not_empty`, …) and an existing folder is never
+  clobbered.
+* **Resume** — `resume <project_id>` / `POST /api/projects/{id}/resume` reclaims expired leases and
+  re-publishes jobs for unfinished cards; a running worker also reaps dead leases every
+  15–60 s on its own, and the console shows a 「恢复未完成的工作」 bar when work is stalled.
+
 ## What is implemented
 
 | Gate | Property | Evidence |
@@ -108,6 +118,17 @@ tools/                  portable java/node/jadx/apktool/android-sdk (deletable)
 reports/                P0 and per-gate acceptance evidence, UI screenshots
 samples/                ground-truth sample APK + six hostile variants
 ```
+
+## 看板上的项目控制
+
+看板顶部为当前项目提供 `暂停` / `继续` / `停止` 与一个指令框（`暂停`、`继续`、`停止`、`状态`、`重试 <卡片>`、`取消 <卡片>`、`恢复未完成`、`help`）。
+
+- `暂停` 只停派发，正在跑的作业会跑完（不打断，避免半套产物）。
+- `停止` 取消待办作业、在阶段边界收口运行中的作业、把未完成卡片置为 `CANCELLED`，不删除任何产物与证据。
+- 切换项目只是换视图，**不会**停止任何正在运行的任务；要停必须显式点「停止」。
+- 四种动作都进 `audit_events`，实时事件流可见。
+
+细节见 [docs/operations.md §3.6](docs/operations.md) 与 [docs/api.md Part 5](docs/api.md)。
 
 ## Documentation
 

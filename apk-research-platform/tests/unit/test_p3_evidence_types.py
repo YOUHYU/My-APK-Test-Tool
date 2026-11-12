@@ -1,4 +1,4 @@
-﻿"""P3 typed evidence: every verdict has to be earned from the artifact bytes.
+"""P3 typed evidence: every verdict has to be earned from the artifact bytes.
 
 The tests below deliberately try to get the platform to *claim* something it cannot
 prove (an expected value that does not match, an image whose dimensions differ, a pcap

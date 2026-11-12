@@ -1,4 +1,4 @@
-﻿"""P3 HTTP surface: sandbox, typed evidence, HTML report, and cross-project refusals."""
+"""P3 HTTP surface: sandbox, typed evidence, HTML report, and cross-project refusals."""
 from __future__ import annotations
 
 from pathlib import Path

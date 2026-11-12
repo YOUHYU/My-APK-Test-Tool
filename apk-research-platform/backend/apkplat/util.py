@@ -53,12 +53,43 @@ def now() -> str:
     return utcnow()
 
 
+_PROJECT_BASE_CACHE: dict[str, str | None] = {}
+
+
+def project_base(project_id: str) -> str | None:
+    """Absolute directory pinned for this project, or None (default location)."""
+    if project_id in _PROJECT_BASE_CACHE:
+        return _PROJECT_BASE_CACHE[project_id]
+    from .db import db  # lazy: db imports config only, so import order stays free
+
+    value: str | None = None
+    try:
+        row = db.one("SELECT storage_root FROM projects WHERE id = ?", (project_id,))
+        if row and row["storage_root"]:
+            value = str(Path(row["storage_root"]).resolve())
+    except Exception:
+        value = None  # pre-009 database: no such column, use the default layout
+    _PROJECT_BASE_CACHE[project_id] = value
+    return value
+
+
+def forget_project_base(project_id: str) -> None:
+    _PROJECT_BASE_CACHE.pop(project_id, None)
+
+
 def project_root(project_id: str) -> Path:
-    return settings.project_dir(project_id)
+    """Directory that owns one project's files.
+
+    Normally ``<storage>/projects/<project_id>``. A project may instead pin an
+    absolute ``storage_root`` (migration 009); that directory then *is* the
+    project root, so one analysis can live wherever the operator wants without
+    moving the whole platform.
+    """
+    return Path(project_base(project_id) or settings.project_dir(project_id))
 
 
-def project_layout(project_id: str) -> dict[str, Path]:
-    base = project_root(project_id)
+def project_layout(project_id: str, base: Path | str | None = None) -> dict[str, Path]:
+    base = Path(base) if base is not None else project_root(project_id)
     layout = {
         "base": base,
         "inputs": base / "inputs",

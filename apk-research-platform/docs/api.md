@@ -36,7 +36,28 @@ Admin scope is a separate header: `POST /api/auth/token` requires
 `APKPLAT_SECRET`). In local mode the guard returns early unless
 `APKPLAT_ALLOW_LOCAL_TOKEN=0`.
 
-### Error shapes — flat vs nested
+### Part 5 - project control: pause / resume / stop (`control_api.py`)
+
+Every project carries a dispatch state (`projects.run_state`): `RUNNING` (default), `PAUSED`, `STOPPED`.
+
+| Method | Path | Body | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/projects/{id}/control` | - | `{project_id,name,run_state,changed_at,reason,jobs:{pending,running,cancelled,cancel_requested},tasks:{running,waiting,unfinished},live_runs,accepting_work}` |
+| POST | `/api/projects/{id}/control` | `{action, reason?}` | `action` ∈ `pause` / `resume` / `stop`; idempotent, returns `{ok,changed,state}` |
+| POST | `/api/projects/{id}/command` | `{text}` | Natural-language-ish operator command; returns `{ok,handled,message,state}` |
+
+What each action does, and does **not** do:
+
+- **pause** - `queue.claim()` joins `projects` and skips rows whose `run_state` is not `RUNNING`, so no new job is dispatched. A job already running is **not** killed: it finishes and lands its normal result. Killing mid-pipeline leaves half a set of artifacts, which is worse than a slower answer.
+- **resume** - dispatch starts again. It does **not** resurrect jobs that `stop` cancelled; that is `POST /api/projects/{id}/resume` (`services/recovery.py`, "恢复未完成的工作"), which re-enqueues unfinished cards.
+- **stop** - cancels pending jobs (`jobs.status=CANCELLED`), sets `jobs.cancel_requested=1` on running ones (cooperative: the handler checks at stage boundaries and raises `control.JobCancelled`), revokes live run capabilities, closes open `agent_runs` rows, and moves non-terminal cards to `CANCELLED`.
+- **switching project in the UI is a view change only** - it issues no control request, so nothing that is running gets disturbed. This is asserted by `tests/integration/test_control_surface.py::test_switching_projects_does_not_disturb_running_work`.
+
+Commands understood by `/command` (Chinese or English): `暂停`/`pause`, `继续`/`resume`, `停止`/`stop`, `状态`/`status`, `重试 <card-id|标题>`, `取消 <card-id>`, `恢复未完成`/`recover`, `help`.
+
+Errors: `unknown_action` 422, `project_not_found` 404, `project_stopped` 409 (pause on a stopped project), `task_project_mismatch` 403 (a card that belongs to another project).
+
+## Error shapes — flat vs nested
 
 | Source | Status | Body |
 | --- | --- | --- |
@@ -73,11 +94,13 @@ Consequence for clients: read `body.error_code` for domain failures and
 
 | Method & path | Scope | Request | OK | Response | Errors |
 | --- | --- | --- | --- | --- | --- |
-| `POST /api/projects` | write | multipart: `name` (req), `apk` file (req), `goal`, `ground_truth` (JSON string), `policy_id="default"` | 201 | `{project, job_id}`; enqueues `static_pipeline` with key `static:{project_id}` | 413 `upload_too_large` (over `APKPLAT_MAX_UPLOAD_MB`=512); 422 flat `ApkError`; 422 `invalid_ground_truth` when the `ground_truth` form field is not JSON (validated before the upload is read) |
-| `GET /api/projects` | read | — | 200 | `{projects[]}` (limit 100) | — |
+| `POST /api/projects` | write | multipart: `name` (req), `apk` file (req), `goal`, `ground_truth` (JSON string), `policy_id="default"`, `storage_root` (absolute directory, optional) | 201 | `{project, job_id}`; enqueues `static_pipeline` with key `static:{project_id}` | 413 `upload_too_large` (over `APKPLAT_MAX_UPLOAD_MB`=512); 422 flat `ApkError`; 422 `invalid_ground_truth` when the `ground_truth` form field is not JSON (validated before the upload is read); 422 `storage_root_not_absolute` / `storage_root_inside_storage` / `storage_root_not_a_directory` / `storage_root_not_empty` / `storage_root_unusable` |
+| `GET /api/projects` | read | — | 200 | `{projects[]}` (limit 100); each row includes `storage_root` (absolute path or `null`) | — |
 | `GET /api/projects/{project_id}` | read | — | 200 | `{project, manifest}` | 404 `project_not_found` |
 | `GET /api/projects/{project_id}/board` | read | — | 200 | `{project, columns{TODO,RUNNING,REVIEW,DONE}, generated_at, approvals[]}`; each card carries `id,title,role,status,priority,progress,version,summary,evidence_count,model_calls,updated_at,depends_on,needs_approval,error_code` | 404 |
 | `GET /api/projects/{project_id}/events` | read | `after=0`, `limit=200` | 200 | `{events[]}` (seq ascending) | 404 |
+| `GET /api/projects/{project_id}/recovery` | read | — | 200 | `{project_id, unfinished, live_jobs, stalled, tasks[], jobs[]}`; `stalled=true` means cards are unfinished and no job is running | 404 |
+| `POST /api/projects/{project_id}/resume` | write | — | 202 | `{ok, project_status, reclaimed[], live_jobs[], unfinished_tasks[], enqueued[]}`; reclaims expired leases, then re-publishes `static_pipeline` for every unfinished card without a live job (idempotency key `resume:<pid>:<task>:<seq>`) | 404 `project_not_found` |
 | `GET /` and `/static/*` | none | — | 200 | `frontend/dist/index.html` and assets, mounted only when `frontend/dist` exists | — |
 
 ## Tasks and approvals

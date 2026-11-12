@@ -141,7 +141,7 @@ def main() -> int:
     if report_row:
         report_path = projects_service.artifact_path(report_row["rel_path"])
         text = Path(report_path).read_text(encoding="utf-8", errors="replace")
-        check("report verification block passes", "证据可追溯：PASS" in text and "产物链：PASS" in text)
+        check("report verification block passes", "证据可追溯：通过" in text and "产物链：通过" in text)
         check("report cites evidence ids", text.count("`evd_") >= 5, f"{text.count('`evd_')} citations")
         for literal in ("REEF-LICENSE-4417", "REEF-SALT-9000", "REEF-API-KEY-7781"):
             check(f"report contains {literal}", literal in text)

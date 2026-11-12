@@ -1,4 +1,4 @@
-﻿"""Markdown report generation (evidence-first).
+"""Markdown report generation (evidence-first).
 
 Rules encoded here, because a report is the artifact people actually read:
 

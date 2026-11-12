@@ -79,8 +79,10 @@ def claim(worker_id: str, kinds: Sequence[str], lease_seconds: int | None = None
     placeholders = ",".join("?" for _ in kinds)
     with db.tx():
         candidates = db.query(
-            f"SELECT * FROM jobs WHERE status IN ('PENDING','RETRYING') AND kind IN ({placeholders})"
-            " AND available_at <= ? ORDER BY priority ASC, available_at ASC, created_at ASC LIMIT 25",
+            "SELECT j.* FROM jobs j LEFT JOIN projects p ON p.id = j.project_id"
+            f" WHERE j.status IN ('PENDING','RETRYING') AND j.kind IN ({placeholders})"
+            " AND j.available_at <= ? AND (p.id IS NULL OR p.run_state = 'RUNNING')"
+            " ORDER BY j.priority ASC, j.available_at ASC, j.created_at ASC LIMIT 25",
             (*kinds, now),
         )
         row = None

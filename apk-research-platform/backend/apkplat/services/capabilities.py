@@ -1,4 +1,4 @@
-﻿"""P1 run capabilities: the only credential a DSH agent ever holds.
+"""P1 run capabilities: the only credential a DSH agent ever holds.
 
 Design rules taken from the taskbook (鎼?.1/鎼?.2):
 

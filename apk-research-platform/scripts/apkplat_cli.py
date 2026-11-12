@@ -20,7 +20,8 @@ from apkplat.db import db  # noqa: E402
 from apkplat.services import artifacts as artifacts_service  # noqa: E402
 from apkplat.services import evidence as evidence_service  # noqa: E402
 from apkplat.services import projects as projects_service  # noqa: E402
-from apkplat.services import queue as queue_service  # noqa: E402
+from apkplat.services import queue as queue_service
+from apkplat.services import recovery as recovery_service  # noqa: E402
 from apkplat.services import tasks as tasks_service  # noqa: E402
 
 
@@ -48,7 +49,13 @@ def cmd_create(args) -> int:
     if source != staged:
         shutil.copy2(source, staged)
     project = projects_service.create(
-        args.name, staged, source.name, goal=args.goal, policy_id=args.policy or "default", actor="cli"
+        args.name,
+        staged,
+        source.name,
+        goal=args.goal,
+        policy_id=args.policy or "default",
+        storage_root=getattr(args, "storage_root", None),
+        actor="cli",
     )
     job = queue_service.enqueue(
         "static_pipeline",
@@ -59,6 +66,13 @@ def cmd_create(args) -> int:
     )
     _out({"project": project, "job_id": job})
     return 0
+
+
+def cmd_resume(args) -> int:
+    """Reclaim expired leases and re-publish jobs for unfinished cards."""
+    summary = recovery_service.resume_project(args.project_id, actor="cli")
+    _out(summary)
+    return 0 if summary.get("ok") else 2
 
 
 def cmd_list(_args) -> int:
@@ -240,6 +254,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("versions", help="probe the project toolchain").set_defaults(func=cmd_versions)
 
     p = sub.add_parser("create", help="ingest an APK and enqueue the static pipeline")
+    p.add_argument("--storage-root", default=None, help="absolute directory that owns this project")
+    p = sub.add_parser("resume", help="reclaim leases and re-publish unfinished work")
+    p.add_argument("project_id")
+    p.set_defaults(func=cmd_resume)
     p.add_argument("--name", required=True)
     p.add_argument("--apk", required=True)
     p.add_argument("--goal", default=None)

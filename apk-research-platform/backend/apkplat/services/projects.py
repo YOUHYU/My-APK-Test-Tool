@@ -11,9 +11,75 @@ from ..apkfile import ApkError, parse_metadata, validate_apk
 from ..config import settings
 from ..db import Row, db, utcnow
 from ..state import COLUMN_OF
-from ..util import abs_from_storage, dumps, loads, new_id, project_layout, rel_to_storage, safe_segment, sha256_file
+from ..util import (
+    abs_from_storage,
+    dumps,
+    forget_project_base,
+    is_within,
+    loads,
+    new_id,
+    project_layout,
+    project_root,
+    rel_to_storage,
+    safe_segment,
+    sha256_file,
+)
 
 DEFAULT_COLUMNS = ("TODO", "RUNNING", "REVIEW", "DONE")
+LAYOUT_DIRS = ("inputs", "manifests", "artifacts", "indexes", "evidence", "logs", "reports")
+
+
+class ProjectError(Exception):
+    """Input problem on project creation (mapped to 4xx by the API)."""
+
+    def __init__(self, code: str, message: str, status: int = 422) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+
+    def as_error(self) -> dict[str, Any]:
+        return {"error_code": self.code, "message": self.message}
+
+
+def resolve_storage_root(project_id: str, value: str | Path | None) -> Path | None:
+    """Validate an operator-supplied project directory.
+
+    Returns the absolute directory (created on demand) or None for the default
+    ``<storage>/projects/<project_id>``. Refuses paths that would nest inside the
+    platform storage area or inside another project, because both make the
+    one-directory-per-project isolation rule impossible to verify afterwards.
+    """
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        raise ProjectError("storage_root_not_absolute", "storage_root must be an absolute path")
+    target = path.resolve()
+    storage = settings.storage.resolve()
+    if is_within(target, storage):
+        raise ProjectError(
+            "storage_root_inside_storage",
+            f"storage_root must live outside the platform storage area ({storage})",
+        )
+    if target.exists() and not target.is_dir():
+        raise ProjectError("storage_root_not_a_directory", f"{target} exists and is not a directory")
+    if target.exists():
+        stray = sorted(p.name for p in target.iterdir() if p.name not in LAYOUT_DIRS)
+        if stray:
+            raise ProjectError(
+                "storage_root_not_empty",
+                f"{target} already contains unrelated entries: {', '.join(stray[:5])}",
+            )
+    try:
+        for name in LAYOUT_DIRS:
+            (target / name).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ProjectError("storage_root_unusable", f"cannot create {target}: {exc}") from exc
+    return target
 
 
 def create(
@@ -24,6 +90,7 @@ def create(
     goal: str | None = None,
     ground_truth: dict | str | None = None,
     policy_id: str = "default",
+    storage_root: str | Path | None = None,
     actor: str = "human",
 ) -> Row:
     apk_source = Path(apk_source)
@@ -34,7 +101,8 @@ def create(
         except json.JSONDecodeError:
             ground_truth = {"raw": ground_truth}
     project_id = new_id("prj_")
-    layout = project_layout(project_id)
+    pinned = resolve_storage_root(project_id, storage_root)
+    layout = project_layout(project_id, base=pinned) if pinned else project_layout(project_id)
     safe_name = safe_segment(filename or "app.apk", "app.apk")
     quarantined = layout["inputs"] / "quarantine" / safe_name
     quarantined.parent.mkdir(parents=True, exist_ok=True)
@@ -84,8 +152,8 @@ def create(
     with db.tx():
         db.execute(
             "INSERT INTO projects(id, name, apk_sha256, apk_filename, package_name, created_at, updated_at,"
-            " status, policy_id, goal, ground_truth, blocked_reason)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            " status, policy_id, goal, ground_truth, blocked_reason, storage_root)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 project_id,
                 name,
@@ -99,8 +167,10 @@ def create(
                 goal,
                 dumps(ground_truth) if ground_truth else None,
                 None,
+                str(pinned) if pinned else None,
             ),
         )
+    forget_project_base(project_id)
     audit.record(
         "project_created",
         project_id=project_id,
@@ -113,6 +183,7 @@ def create(
             "entries": validation.entries,
             "bytes": final_path.stat().st_size,
             "policy_id": policy_id,
+            "storage_root": str(pinned) if pinned else None,
         },
     )
     return get(project_id)  # type: ignore[return-value]
@@ -131,7 +202,7 @@ def list_projects(limit: int = 100) -> list[Row]:
 
 
 def manifest(project_id: str) -> dict[str, Any]:
-    path = settings.project_dir(project_id) / "manifests" / "manifest.json"
+    path = project_root(project_id) / "manifests" / "manifest.json"
     if not path.exists():
         return {}
     return loads(path.read_text(encoding="utf-8"), {})

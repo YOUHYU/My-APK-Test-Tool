@@ -1,4 +1,4 @@
-﻿"""G3 acceptance: typed/binary evidence, the cooperative sandbox, independent re-runs, report.
+"""G3 acceptance: typed/binary evidence, the cooperative sandbox, independent re-runs, report.
 
 Every check prints the concrete value it observed, so the report can be audited without
 re-running anything. Nothing here claims a capability the host does not have: container

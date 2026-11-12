@@ -1,4 +1,4 @@
-﻿"""P2 over HTTP: the graph, the review loop, independent review runs and the event feed.
+"""P2 over HTTP: the graph, the review loop, independent review runs and the event feed.
 
 Every assertion goes through the public API where one exists, because the point of the stage is
 that the operator and the agents see the same facts as the database.

@@ -457,6 +457,38 @@ def check_task_lifecycle(project_id):
     return "task %s TODO->BLOCKED; %s" % (task_id, board_note)
 
 
+def check_control(project_id):
+    """Board control bar: GET /control, and (with --mutate) a pause/resume round trip."""
+    data = get("/api/projects/%s/control" % project_id)
+    for key in ("run_state", "jobs", "tasks", "live_runs", "accepting_work"):
+        if key not in data:
+            raise CheckFailed("control payload has no %r" % key)
+    for key in ("pending", "running", "cancelled", "cancel_requested"):
+        if key not in data["jobs"]:
+            raise CheckFailed("control jobs has no %r" % key)
+    note = "state=%s pending=%d unfinished=%d" % (
+        data["run_state"], data["jobs"]["pending"], data["tasks"]["unfinished"])
+    if not ARGS.mutate:
+        return note
+
+    if data["run_state"] == "RUNNING":
+        jrequest("POST", "/api/projects/%s/control" % project_id,
+                 body={"action": "pause", "reason": "ui-smoke 往返"})
+        paused = get("/api/projects/%s/control" % project_id)
+        if paused["run_state"] != "PAUSED":
+            raise CheckFailed("pause did not take: %r" % paused["run_state"])
+        jrequest("POST", "/api/projects/%s/control" % project_id,
+                 body={"action": "resume", "reason": "ui-smoke 往返"})
+        resumed = get("/api/projects/%s/control" % project_id)
+        if resumed["run_state"] != "RUNNING":
+            raise CheckFailed("resume did not take: %r" % resumed["run_state"])
+        note += "; paused/resumed"
+    cmd = jrequest("POST", "/api/projects/%s/command" % project_id, body={"text": "状态"})
+    if not cmd.get("ok"):
+        raise CheckFailed("command '状态' failed: %r" % cmd)
+    return note
+
+
 CHECKS = [
     ("GET /api/health", lambda ctx: check_health()),
     ("GET /api/projects", lambda ctx: check_projects()),
@@ -474,6 +506,7 @@ CHECKS = [
     ("GET /api/projects/{id}/packages", lambda ctx: check_packages(ctx["project"])),
     ("GET /api/metrics", lambda ctx: check_metrics()),
     ("GET /api/queue?project_id=", lambda ctx: check_queue(ctx["project"])),
+    ("GET+POST /api/projects/{id}/control|command", lambda ctx: check_control(ctx["project"])),
     ("GET /api/events/stream (SSE)", lambda ctx: check_sse(ctx["project"])),
     ("GET /  +  /static/*", lambda ctx: check_static()),
     ("404 error envelope", lambda ctx: check_error_envelope()),

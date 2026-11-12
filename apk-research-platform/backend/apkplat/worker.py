@@ -27,6 +27,7 @@ from .db import utcnow
 from . import clock
 from .services import artifacts as artifacts_service
 from .services import queue as queue_service
+from .services import control as control_service
 from .services import tasks as tasks_service
 
 
@@ -53,7 +54,12 @@ def _static_handler(job: dict) -> dict[str, Any]:
         )
         queue_service.attach_task(job["id"], task_id)
         job["task_id"] = task_id
-    summary = pipeline_static.run(project_id, log=lambda m: _job_log(job["id"], m), task_id=task_id)
+    summary = pipeline_static.run(
+        project_id,
+        log=lambda m: _job_log(job["id"], m),
+        task_id=task_id,
+        check=control_service.check_callable(job),
+    )
     summary.setdefault("task_id", task_id)
     return summary
 
@@ -79,6 +85,7 @@ def _dynamic_handler(job: dict) -> dict[str, Any]:
         transport_name=job["payload"].get("transport"),
         device_id=job["payload"].get("device_id"),
         log=lambda m: _job_log(job["id"], m),
+        check=control_service.check_callable(job),
     )
 
 
@@ -115,11 +122,15 @@ class Worker:
         *,
         poll_interval: float = 1.0,
         lease_seconds: int | None = None,
+        reap_interval: float | None = None,
     ) -> None:
         self.worker_id = worker_id
         self.kinds = kinds or list(HANDLERS)
         self.poll_interval = poll_interval
         self.lease_seconds = lease_seconds or settings.job_lease_seconds
+        # How often an idle worker looks for leases that died elsewhere. Callable code
+        # never sets this; tests shrink it and the default keeps it well under a lease.
+        self.reap_interval = reap_interval or max(15.0, min(60.0, self.lease_seconds / 4.0))
         self.stop = threading.Event()
         self.current: dict | None = None
         self._hb: threading.Thread | None = None
@@ -178,7 +189,20 @@ class Worker:
         self.start()
         processed = 0
         idle_since = clock.monotonic()
+        # A long-lived worker still has to pick up leases that died elsewhere (a crashed
+        # sibling worker, a killed API process). Reaping on a timer is what makes
+        # "restart the worker" optional instead of mandatory after an interruption.
+        reap_every = self.reap_interval
+        last_reap = clock.monotonic()
         while not self.stop.is_set():
+            if clock.monotonic() - last_reap >= reap_every:
+                last_reap = clock.monotonic()
+                recovered = queue_service.reclaim_expired(self.worker_id)
+                if recovered:
+                    print(
+                        f"[worker {self.worker_id}] reaped {len(recovered)} expired lease(s)",
+                        flush=True,
+                    )
             job = queue_service.claim(self.worker_id, self.kinds, self.lease_seconds)
             if not job:
                 if max_jobs is not None and processed >= max_jobs:
@@ -217,6 +241,8 @@ class Worker:
                 actor=self.worker_id,
                 payload={"job_id": job["id"], "kind": job["kind"], "duration_ms": int((time.time() - started) * 1000)},
             )
+        except control_service.JobCancelled as exc:
+            self._cancelled(job, exc, started)
         except pipeline_static.StageError as exc:
             self._fail(job, exc.code, exc.message, {"stage": exc.stage, **exc.detail}, started)
         except Exception as exc:  # noqa: BLE001
@@ -230,6 +256,39 @@ class Worker:
         finally:
             self.current = None
             _release_identity(job)
+
+    def _cancelled(self, job: dict, exc: "control_service.JobCancelled", started: float) -> None:
+        """The operator asked this job to stop: mark the row CANCELLED and close the card.
+
+        A stop is not a failure - retrying it would resurrect exactly what the operator
+        cancelled - so it bypasses the retry/backoff path entirely.
+        """
+        fresh = queue_service.get(job["id"])
+        if fresh is not None and fresh["task_id"] and not job.get("task_id"):
+            job = {**job, "task_id": fresh["task_id"]}
+        queue_service.cancel(job["id"], actor="human")
+        if job.get("task_id"):
+            try:
+                tasks_service.update(
+                    job["task_id"],
+                    status="CANCELLED",
+                    actor="human",
+                    reason="operator stop",
+                )
+            except Exception:  # noqa: BLE001 - the job is cancelled either way
+                pass
+        audit.record(
+            "job_cancelled",
+            project_id=job.get("project_id"),
+            task_id=job.get("task_id"),
+            actor=self.worker_id,
+            payload={
+                "job_id": job["id"],
+                "kind": job["kind"],
+                "reason": exc.reason,
+                "duration_ms": int((time.time() - started) * 1000),
+            },
+        )
 
     def _fail(self, job: dict, code: str, message: str, detail: dict, started: float) -> None:
         # The handler may have created a task mid-flight and attached it to the row, so

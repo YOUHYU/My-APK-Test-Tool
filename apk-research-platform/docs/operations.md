@@ -183,6 +183,77 @@ CLI — same work without HTTP:
 `queue --reclaim` expires dead leases; `job-reset <job_id> --reason "..."` returns a job to
 PENDING and audits `job_reset_by_operator`.
 
+### 3.4 Per-project storage location
+
+Every project owns one directory. By default it is `<APKPLAT_STORAGE>/projects/<project_id>`;
+a project may instead pin an absolute `storage_root`, and then *all* of its files
+(`inputs/`, `manifests/`, `artifacts/`, `indexes/`, `evidence/`, `logs/`, `reports/`) live
+there while the row in `projects` keeps the pointer:
+
+```powershell
+# HTTP
+curl.exe -s -X POST "$base/api/projects" -H "Authorization: Bearer $token" `
+  -F "name=case-42" -F "apk=@samples\sample-app.apk" -F "storage_root=D:\cases\case-42"
+# CLI
+.\.venv\Scripts\python.exe scripts\apkplat_cli.py create --name case-42 --apk samples\sample-app.apk --storage-root D:\cases\case-42
+```
+
+Rules enforced before anything is written (migration `009_project_storage.sql`):
+
+| Refusal | Meaning |
+| --- | --- |
+| `storage_root_not_absolute` | the path must be absolute; relative paths would depend on the process cwd |
+| `storage_root_inside_storage` | the directory may not sit inside `<APKPLAT_STORAGE>`, otherwise the default layout and a pinned one overlap |
+| `storage_root_not_a_directory` | the path exists and is a file |
+| `storage_root_not_empty` | the directory exists and holds entries other than the seven layout dirs — an existing case folder is never clobbered |
+| `storage_root_unusable` | creating the layout failed (permissions, missing drive) |
+
+Artifacts of a pinned project are recorded by absolute path (`artifacts.rel_path`), so
+`GET /api/artifacts/{id}` and `verify` keep working; isolation checks still compare resolved
+paths against that project's own root, so a pinned project can never read another project's files.
+
+### 3.5 Resume after an interruption
+
+Nothing is lost when the API or a worker dies — the queue is in SQLite and leases expire — but
+an interrupted project needs one push. `POST /api/projects/{id}/resume` (CLI: `resume <project_id>`)
+does exactly two things, both audited as `project_resumed`:
+
+1. reclaim expired leases (`job_lease_reclaimed`), which returns the jobs to `PENDING`/`RETRYING`;
+2. re-publish `static_pipeline` for every unfinished card that has no live job
+   (idempotency key `resume:<project>:<task>:<seq>`, so a second press cannot double-run a stage).
+
+A long-lived worker also reaps on its own: `Worker.run()` calls `reclaim_expired()` every
+`max(15, min(60, lease/4))` seconds, so recovering from a crashed peer no longer requires
+restarting the worker. The UI shows a "恢复未完成的工作" bar above the project overview when
+`GET /api/projects/{id}/recovery` reports a problem; two shapes trigger it:
+
+| `stalled` reason | Field | Meaning |
+| --- | --- | --- |
+| unfinished cards, nothing running | `unfinished>0, live_jobs=0` | the platform was restarted and nothing picked the work back up |
+| a job whose lease expired | `dead_leases>0` | the owning process stopped heartbeating; the row still says `RUNNING` until reaped |
+
+Note that a job row alone is not "stalled work": a freshly uploaded project has one `PENDING`
+job and no cards yet, which is healthy. Pressing the button in that state reclaims nothing and
+re-publishes nothing (both are audited, so the no-op is visible).
+
+### 3.6 看板上的暂停 / 继续 / 停止
+
+看板顶部有一排项目控制：运行状态 chip、`暂停`/`继续`/`停止` 三个按钮，以及一个指令输入框
+（回车或点「执行」发送）。三条语义要分清：
+
+| 动作 | 会做什么 | 不会做什么 |
+| --- | --- | --- |
+| 暂停 | `queue.claim()` 跳过非 `RUNNING` 项目 → 不再派发新作业 | 不杀正在跑的作业；它会跑完并照常落结果（中途杀掉会留下半套产物） |
+| 继续 | 恢复派发 | 不复活被 `停止` 取消的作业；那要用「恢复未完成的工作」（`POST /api/projects/{id}/resume`） |
+| 停止 | 取消待办作业、给运行中作业打 `cancel_requested`（阶段边界退出）、注销 run capability、关闭 `agent_runs`、未完成卡片置 `CANCELLED` | 不会删除任何产物或证据；审计表只追加 |
+
+**切换项目不会停止任何东西**：换项目只是换视图，前端不发任何控制请求。集成测试
+`test_switching_projects_does_not_disturb_running_work` 断言：连续读 B 项目的一堆端点之后，
+A 项目的作业行逐字段不变。要停就先在对应项目上点「停止」——这是显式动作，不是副作用。
+
+四个操作都写 `audit_events`（`project_control` / `job_cancelled` / `task_status_changed`），
+UI 右下角的实时事件流里可以直接看到，`GET /api/projects/{id}/events` 也能回放。
+
 ## 4. Environment variables
 
 Defaults come from `backend/apkplat/config.py` — an unset variable gives the value in the

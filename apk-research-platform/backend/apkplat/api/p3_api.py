@@ -1,4 +1,4 @@
-﻿"""P3 API surface: sandbox execution, typed evidence, and the HTML report view.
+"""P3 API surface: sandbox execution, typed evidence, and the HTML report view.
 
 Two rules carried over from P1/P2 and worth restating, because they are what makes the
 numbers in the report mean something:

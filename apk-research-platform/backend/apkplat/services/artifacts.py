@@ -6,7 +6,7 @@ from typing import Any, Iterable
 
 from ..config import settings
 from ..db import Row, db, utcnow
-from ..util import clamp, is_within, new_id, redact, rel_to_storage, sha256_file
+from ..util import clamp, is_within, new_id, project_root, redact, rel_to_storage, sha256_file
 
 
 class ArtifactError(ValueError):
@@ -23,9 +23,9 @@ def register(
     tool_version: str | None = None,
     actor: str = "system",
 ) -> Row:
-    project_root = settings.project_dir(project_id)
-    if not is_within(path, project_root):
-        raise ArtifactError(f"artifact path {path} is outside project root {project_root}")
+    base = project_root(project_id)
+    if not is_within(path, base):
+        raise ArtifactError(f"artifact path {path} is outside project root {base}")
     if not path.exists():
         raise ArtifactError(f"artifact file missing: {path}")
     digest = sha256_file(path) if path.is_file() else None

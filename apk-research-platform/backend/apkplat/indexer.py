@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .config import settings
+from .util import project_root
 
 MAX_UNITS = 200_000
 MAX_STRINGS = 100_000
@@ -55,7 +56,7 @@ class IndexError_(RuntimeError):
 
 
 def index_path(project_id: str) -> Path:
-    path = settings.project_dir(project_id) / "indexes" / "index.db"
+    path = project_root(project_id) / "indexes" / "index.db"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -369,7 +370,7 @@ def get_method(project_id: str, class_name: str, method: str, *, max_lines: int 
         if not row:
             return None
         unit = dict(row)
-        root = settings.project_dir(project_id) / "artifacts" / "jadx"
+        root = project_root(project_id) / "artifacts" / "jadx"
         candidate = root / unit["file"]
         if not candidate.exists():
             candidate = _find_file(project_id, unit["file"])
@@ -391,7 +392,7 @@ def get_method(project_id: str, class_name: str, method: str, *, max_lines: int 
 
 
 def _find_file(project_id: str, rel: str) -> Path | None:
-    base = settings.project_dir(project_id) / "artifacts"
+    base = project_root(project_id) / "artifacts"
     target = base / rel
     if target.exists():
         return target
